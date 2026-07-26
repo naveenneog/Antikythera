@@ -200,6 +200,22 @@ body{
 }
 @keyframes bp{0%,100%{opacity:.18}50%{opacity:.72}}
 #boot.gone{opacity:0;pointer-events:none}
+
+/* shown only if the browser refuses audio until a gesture */
+#hint{
+  position:fixed;z-index:19;right:26px;bottom:30px;
+  font-family:var(--mono);font-size:10px;font-weight:300;
+  letter-spacing:.30em;text-transform:uppercase;
+  color:rgba(244,239,230,.34);
+  opacity:0;pointer-events:none;transition:opacity .8s ease;
+  display:flex;align-items:center;gap:9px;
+}
+#hint.on{opacity:1}
+#hint i{
+  width:5px;height:5px;border-radius:50%;background:rgba(224,168,98,.85);
+  animation:hp 2.4s ease-in-out infinite;
+}
+@keyframes hp{0%,100%{opacity:.25;transform:scale(.8)}50%{opacity:1;transform:scale(1.15)}}
 </style>
 </head>
 <body>
@@ -230,6 +246,8 @@ body{
   <button class="btn" id="replay">Replay</button>
   <button class="btn" id="sound">Sound On</button>
 </div>
+
+<div id="hint"><i></i>Click anywhere for sound</div>
 
 <div id="boot"><div class="m">Antikythera</div></div>
 
@@ -418,27 +436,45 @@ const SND={
     return g;
   },
 
-  /* the bed: detuned saws under a slow filter sweep, breathing */
-  drone(){
-    if(!this.on) return;
+  /* The bed: detuned saws under a slow filter sweep, breathing.
+     Takes an `offset` so it can join late (when audio unlocks part-way
+     through) at exactly the point in its envelope the piece has reached,
+     instead of restarting its 5s fade from zero over the top of Act III. */
+  drone(offset){
+    if(!this.on || this._droneOn) return;
+    offset=Math.max(0,offset||0);
+    if(offset>30) return;
     const c=this.ctx,t=c.currentTime;
-    const g=c.createGain(); g.gain.setValueAtTime(0,t);
-    g.gain.linearRampToValueAtTime(.30,t+5);
+    const lerp=(a,b,u)=>a+(b-a)*Math.max(0,Math.min(1,u));
+    this._droneOn=true;
+
+    const g=c.createGain();
+    const g0=offset>=5?.30:lerp(0,.30,offset/5);
+    g.gain.setValueAtTime(g0,t);
+    if(offset<5) g.gain.linearRampToValueAtTime(.30,t+(5-offset));
+
     const lp=c.createBiquadFilter(); lp.type='lowpass'; lp.Q.value=3.5;
-    lp.frequency.setValueAtTime(110,t);
-    lp.frequency.linearRampToValueAtTime(340,t+16);
-    lp.frequency.linearRampToValueAtTime(150,t+28);
+    const f0=offset<=16?lerp(110,340,offset/16):lerp(340,150,(offset-16)/12);
+    lp.frequency.setValueAtTime(f0,t);
+    if(offset<16){
+      lp.frequency.linearRampToValueAtTime(340,t+(16-offset));
+      lp.frequency.linearRampToValueAtTime(150,t+(28-offset));
+    } else if(offset<28){
+      lp.frequency.linearRampToValueAtTime(150,t+(28-offset));
+    }
+
+    const life=Math.max(1.5,32-offset);
     [40,40.35,60.2,80.5].forEach((f,i)=>{
       const o=c.createOscillator();
       o.type=i>1?'sine':'sawtooth'; o.frequency.value=f;
       const og=c.createGain(); og.gain.value=i>1?.20:.34;
-      o.connect(og); og.connect(lp); o.start(t); o.stop(t+32); this._n.push(o);
+      o.connect(og); og.connect(lp); o.start(t); o.stop(t+life); this._n.push(o);
     });
     lp.connect(g); g.connect(this.bus);
     const s=c.createGain(); s.gain.value=.18; g.connect(s); s.connect(this.wet);
     const lfo=c.createOscillator(); lfo.frequency.value=.09;
     const lg=c.createGain(); lg.gain.value=.09;
-    lfo.connect(lg); lg.connect(g.gain); lfo.start(t); lfo.stop(t+32); this._n.push(lfo);
+    lfo.connect(lg); lg.connect(g.gain); lfo.start(t); lfo.stop(t+life); this._n.push(lfo);
   },
 
   hit(force){
@@ -532,7 +568,7 @@ const SND={
     n.start(t); n.stop(t+dur+.6);
   },
 
-  stopAll(){ this._n.forEach(n=>{try{n.stop&&n.stop();}catch(e){}}); this._n=[]; }
+  stopAll(){ this._droneOn=false; this._n.forEach(n=>{try{n.stop&&n.stop();}catch(e){}}); this._n=[]; }
 };
 SND.duck=function(to,dur){
   if(!this.ctx||!this.on) return;
@@ -1829,17 +1865,65 @@ function start(){
   MASTER.play(0);
 }
 
-R('replay').addEventListener('click',()=>{
-  if(!SND.on&&SND._want!==false){ /* a click is a gesture: honour it */ }
-  start();
-});
+R('replay').addEventListener('click',()=>{ start(); });
+
+/* ---------- audio unlock ---------------------------------------------
+   Sound is ON by default. Browsers refuse to start an AudioContext
+   without a user gesture, so we (a) try immediately at boot, and
+   (b) if that's refused, arm every plausible first gesture anywhere on
+   the page — not just the sound button — and unlock on whichever lands
+   first. When it unlocks part-way through, the drone joins at the right
+   point in its envelope rather than restarting under the picture.     */
 const sndBtn=R('sound');
+SND._want=true;
+
+function soundBtnState(){
+  const blocked=SND._want&&!SND.on;
+  R('hint').classList.toggle('on',blocked&&BOOTED);
+  if(SND.on){ sndBtn.textContent='Sound Off'; sndBtn.classList.add('hot'); sndBtn.title='Mute'; }
+  else if(SND._want){ sndBtn.textContent='Sound On'; sndBtn.classList.remove('hot');
+                      sndBtn.title='Audio is blocked until you interact with the page — click anywhere'; }
+  else { sndBtn.textContent='Sound On'; sndBtn.classList.remove('hot'); sndBtn.title='Unmute'; }
+}
+let BOOTED=false;
+
+function armGestures(on){
+  const m=on?'addEventListener':'removeEventListener';
+  ['pointerdown','touchstart','mousedown','keydown','click'].forEach(ev=>
+    document[m](ev,onFirstGesture,{capture:true}));
+}
+function onFirstGesture(e){
+  // the sound button is authoritative for itself, so don't race it
+  if(e&&e.target&&e.target.closest&&e.target.closest('#sound')) return;
+  unlockAudio();
+}
+function unlockAudio(){
+  if(!SND._want||SND.on) return;
+  SND.init();
+  if(!SND.ctx) return;
+  const go=()=>{
+    if(SND.ctx.state!=='running') return;
+    SND.enable();
+    // If the timeline has already run past the drone cue, join the bed at
+    // the point the picture has reached. Otherwise leave it to the cue.
+    const t=MASTER?MASTER.time():0;
+    if(t>0.05&&t<28.5) SND.drone(t-0.05);
+    armGestures(false);
+    soundBtnState();
+  };
+  if(SND.ctx.state==='running') go();
+  else SND.ctx.resume().then(go).catch(()=>{});
+}
+
 sndBtn.addEventListener('click',()=>{
-  if(SND.on){ SND.disable(); SND._want=false; sndBtn.textContent='Sound On'; sndBtn.classList.remove('hot'); }
-  else      { SND.enable();  SND._want=true;  sndBtn.textContent='Sound Off'; sndBtn.classList.add('hot'); }
+  if(SND.on){ SND._want=false; SND.disable(); soundBtnState(); }
+  else { SND._want=true; armGestures(false); unlockAudio(); soundBtnState(); }
 });
-// any first gesture unlocks audio if the viewer wants it
-addEventListener('pointerdown',function once(){ SND.init(); },{once:true});
+
+// if the tab is backgrounded the context can be suspended out from under us
+document.addEventListener('visibilitychange',()=>{
+  if(!document.hidden&&SND._want&&SND.ctx&&SND.ctx.state==='suspended') SND.ctx.resume().catch(()=>{});
+});
 
 addEventListener('keydown',e=>{
   if(e.code==='Space'){ e.preventDefault(); start(); }
@@ -1854,7 +1938,16 @@ window.SEQ={
   get master(){ return MASTER; },
   seek(t){ if(MASTER){ MASTER.pause(); MASTER.seek(t,false); } },
   play(){ if(MASTER) MASTER.play(); },
-  get duration(){ return MASTER?MASTER.duration():0; }
+  get duration(){ return MASTER?MASTER.duration():0; },
+  /* audio state, and a hook so an embedding page can turn sound on from
+     its own user gesture instead of waiting for one on this page */
+  get audio(){
+    return { state: SND.ctx?SND.ctx.state:'none', on:!!SND.on,
+             want:!!SND._want, drone:!!SND._droneOn,
+             gain: SND.bus?+SND.bus.gain.value.toFixed(3):0 };
+  },
+  enableSound(){ SND._want=true; unlockAudio(); soundBtnState(); },
+  muteSound(){ SND._want=false; SND.disable(); soundBtnState(); }
 };
 
 /* wait for fonts AND a first rendered frame, so nothing can pop in
@@ -1868,7 +1961,17 @@ function boot(){
     requestAnimationFrame(()=>{
       R('boot').classList.add('gone');
       setTimeout(()=>{ R('boot').style.display='none'; },760);
+      // sound is on by default: try to start it with the picture. if the
+      // browser refuses without a gesture, the armed listeners catch the
+      // first one and the bed joins at the right point.
+      armGestures(true);
+      unlockAudio();
+      soundBtnState();
       start();
+      // some engines only flip the context to 'running' a beat later; only
+      // surface the hint once we're sure the browser really did refuse
+      setTimeout(()=>{ unlockAudio(); soundBtnState(); },350);
+      setTimeout(()=>{ BOOTED=true; unlockAudio(); soundBtnState(); },1400);
     });
   });
 }

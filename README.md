@@ -145,15 +145,18 @@ would break the "no build step, no server" constraint.
 |---|---|
 | **Replay** | full state reset and replay |
 | **Space** | same |
-| **Sound On** | browsers block autoplay audio until a gesture, so the score starts muted |
+| **Sound** | **on by default.** Browsers won't start an `AudioContext` without a user gesture, so if yours refuses, the first click *anywhere* on the page unlocks it — and the drone joins at the point in its envelope the picture has already reached, rather than restarting underneath it. A small "click anywhere for sound" hint appears only if the browser actually blocked it. |
 
 A small transport API is exposed for scrubbing and inspection:
 
 ```js
-SEQ.play()       // resume
-SEQ.seek(12.4)   // jump to a time (renders onUpdate-driven writes faithfully)
-SEQ.start()      // restart from zero
-SEQ.duration     // 29.05
+SEQ.play()          // resume
+SEQ.seek(12.4)      // jump to a time (renders onUpdate-driven writes faithfully)
+SEQ.start()         // restart from zero
+SEQ.duration        // 29.05
+SEQ.audio           // { state, on, want, drone, gain }
+SEQ.enableSound()   // turn sound on from an embedding page's own gesture
+SEQ.muteSound()
 ```
 
 ---
