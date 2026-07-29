@@ -145,7 +145,7 @@ would break the "no build step, no server" constraint.
 |---|---|
 | **Replay** | full state reset and replay |
 | **Space** | same |
-| **Sound** | **on by default.** Browsers won't start an `AudioContext` without a user gesture, so if yours refuses, the first click *anywhere* on the page unlocks it — and the drone joins at the point in its envelope the picture has already reached, rather than restarting underneath it. A small "click anywhere for sound" hint appears only if the browser actually blocked it. |
+| **Sound** | **off by default.** A speaker icon sits bottom-right from the first frame reading *turn on sound — headphones recommended*. That click is the gesture that unlocks the `AudioContext`, so no autoplay policy is ever fought. Turn it on part-way through and the drone joins at the point in its envelope the picture has already reached, rather than restarting its fade underneath the act. The invitation steps back to a bare toggle after ~11s. |
 
 A small transport API is exposed for scrubbing and inspection:
 

@@ -201,21 +201,80 @@ body{
 @keyframes bp{0%,100%{opacity:.18}50%{opacity:.72}}
 #boot.gone{opacity:0;pointer-events:none}
 
-/* shown only if the browser refuses audio until a gesture */
-#hint{
-  position:fixed;z-index:19;right:26px;bottom:30px;
-  font-family:var(--mono);font-size:10px;font-weight:300;
-  letter-spacing:.30em;text-transform:uppercase;
-  color:rgba(244,239,230,.34);
-  opacity:0;pointer-events:none;transition:opacity .8s ease;
-  display:flex;align-items:center;gap:9px;
+/* ---------- sound toggle ----------------------------------------------
+   Present from the first frame, muted by default. It states the offer
+   ("turn on sound", "headphones recommended"), then retreats to a bare
+   icon once the viewer has answered it — or after a while if they don't. */
+#snd{
+  position:fixed;z-index:21;right:28px;bottom:28px;
+  display:flex;flex-direction:row-reverse;align-items:center;gap:13px;
+  background:none;border:0;padding:6px;margin:0;
+  cursor:pointer;opacity:0;pointer-events:none;
+  transition:opacity .9s cubic-bezier(.2,.8,.2,1);
+  -webkit-tap-highlight-color:transparent;
 }
-#hint.on{opacity:1}
-#hint i{
-  width:5px;height:5px;border-radius:50%;background:rgba(224,168,98,.85);
-  animation:hp 2.4s ease-in-out infinite;
+#snd.show{opacity:1;pointer-events:auto}
+#snd.rest{opacity:.34}
+#snd.rest:hover,#snd:focus-visible{opacity:1}
+#snd:focus{outline:none}
+#snd:focus-visible .ico{border-color:rgba(127,233,255,.7)}
+
+#snd .ico{
+  position:relative;flex:0 0 auto;
+  width:38px;height:38px;border-radius:50%;
+  border:1px solid rgba(244,239,230,.22);
+  background:rgba(255,255,255,.03);
+  display:grid;place-items:center;
+  backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+  transition:border-color .4s,background .4s,transform .4s cubic-bezier(.2,.8,.2,1);
 }
-@keyframes hp{0%,100%{opacity:.25;transform:scale(.8)}50%{opacity:1;transform:scale(1.15)}}
+#snd:hover .ico{border-color:rgba(244,239,230,.55);background:rgba(255,255,255,.08)}
+#snd:active .ico{transform:scale(.94)}
+#snd .ico svg{width:19px;height:19px;display:block;overflow:visible}
+#snd .ico path,#snd .ico line{
+  fill:none;stroke:rgba(244,239,230,.82);
+  stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;
+}
+#snd .ico .cone{fill:rgba(244,239,230,.82);stroke-width:1.2}
+
+/* muted vs playing */
+#snd .waves{opacity:0;transform:translateX(-3px);transition:opacity .45s,transform .45s cubic-bezier(.2,.8,.2,1)}
+#snd .slash{opacity:1;transition:opacity .3s}
+#snd.on .waves{opacity:1;transform:none}
+#snd.on .slash{opacity:0}
+#snd.on .ico{border-color:rgba(127,233,255,.42)}
+#snd.on .ico path,#snd.on .ico line{stroke:rgba(160,238,255,.95)}
+#snd.on .ico .cone{fill:rgba(160,238,255,.95)}
+
+/* the invitation — only up until it's answered */
+#snd .lbl{
+  display:block;text-align:right;white-space:nowrap;
+  font-family:var(--mono);text-transform:uppercase;
+  transition:opacity .7s ease,transform .7s cubic-bezier(.2,.8,.2,1);
+}
+#snd.answered .lbl{opacity:0;transform:translateX(14px);pointer-events:none}
+#snd .lbl b{
+  display:block;font-size:10px;font-weight:500;letter-spacing:.30em;
+  color:rgba(244,239,230,.88);
+}
+#snd .lbl em{
+  display:block;margin-top:5px;font-size:9px;font-style:normal;font-weight:300;
+  letter-spacing:.22em;color:rgba(224,168,98,.68);
+}
+/* a slow breath on the ring, so the eye finds it without being shouted at */
+#snd:not(.answered) .ico::after{
+  content:'';position:absolute;inset:-1px;border-radius:50%;
+  border:1px solid rgba(224,168,98,.55);
+  animation:sndPulse 2.8s cubic-bezier(.2,.8,.2,1) infinite;
+}
+@keyframes sndPulse{
+  0%{transform:scale(1);opacity:.55}
+  70%{transform:scale(1.45);opacity:0}
+  100%{transform:scale(1.45);opacity:0}
+}
+@media (prefers-reduced-motion:reduce){
+  #snd:not(.answered) .ico::after{animation:none;opacity:.4}
+}
 </style>
 </head>
 <body>
@@ -244,10 +303,24 @@ body{
 
 <div id="ui">
   <button class="btn" id="replay">Replay</button>
-  <button class="btn" id="sound">Sound On</button>
 </div>
 
-<div id="hint"><i></i>Click anywhere for sound</div>
+<button id="snd" type="button" aria-pressed="false" aria-label="Turn on sound">
+  <span class="ico" aria-hidden="true">
+    <svg viewBox="0 0 24 24">
+      <path class="cone" d="M4.2 9.3h3.1L11.6 6v12L7.3 14.7H4.2z"/>
+      <g class="waves">
+        <path d="M14.9 9.4a3.7 3.7 0 0 1 0 5.2"/>
+        <path d="M17.4 7.1a7.2 7.2 0 0 1 0 9.8"/>
+      </g>
+      <g class="slash">
+        <line x1="15.2" y1="9.6" x2="20.2" y2="14.6"/>
+        <line x1="20.2" y1="9.6" x2="15.2" y2="14.6"/>
+      </g>
+    </svg>
+  </span>
+  <span class="lbl"><b>Turn on sound</b><em>Headphones recommended</em></span>
+</button>
 
 <div id="boot"><div class="m">Antikythera</div></div>
 
@@ -1863,52 +1936,52 @@ function start(){
   SND.stopAll();
   MASTER=buildTimeline();
   MASTER.play(0);
+  if(typeof armSoundOffer==='function') armSoundOffer();
 }
 
 R('replay').addEventListener('click',()=>{ start(); });
 
-/* ---------- audio unlock ---------------------------------------------
-   Sound is ON by default. Browsers refuse to start an AudioContext
-   without a user gesture, so we (a) try immediately at boot, and
-   (b) if that's refused, arm every plausible first gesture anywhere on
-   the page — not just the sound button — and unlock on whichever lands
-   first. When it unlocks part-way through, the drone joins at the right
-   point in its envelope rather than restarting under the picture.     */
-const sndBtn=R('sound');
-SND._want=true;
+/* ---------- sound -----------------------------------------------------
+   Muted by default, and honest about it: the control is on screen from
+   the first frame stating the offer, rather than hiding at the end. The
+   viewer's click is the gesture that unlocks the AudioContext, so no
+   autoplay policy is ever fought. If they turn it on part-way through,
+   the drone joins at the point in its envelope the picture has already
+   reached instead of restarting its fade underneath the act.          */
+const sndBtn=R('snd');
+SND._want=false;
+let sndAnswered=false, sndRetired=false, sndRetireT=0;
 
 function soundBtnState(){
-  const blocked=SND._want&&!SND.on;
-  R('hint').classList.toggle('on',blocked&&BOOTED);
-  if(SND.on){ sndBtn.textContent='Sound Off'; sndBtn.classList.add('hot'); sndBtn.title='Mute'; }
-  else if(SND._want){ sndBtn.textContent='Sound On'; sndBtn.classList.remove('hot');
-                      sndBtn.title='Audio is blocked until you interact with the page — click anywhere'; }
-  else { sndBtn.textContent='Sound On'; sndBtn.classList.remove('hot'); sndBtn.title='Unmute'; }
+  const on=!!SND.on;
+  const quiet=sndAnswered||sndRetired;   // invitation withdrawn
+  sndBtn.classList.toggle('on',on);
+  sndBtn.classList.toggle('answered',quiet);
+  sndBtn.classList.toggle('rest',quiet);
+  sndBtn.setAttribute('aria-pressed',on?'true':'false');
+  sndBtn.setAttribute('aria-label',on?'Turn off sound':'Turn on sound');
+  sndBtn.title=on?'Mute':'Turn on sound — headphones recommended';
 }
-let BOOTED=false;
+/* the offer stands for a while, then steps back to a bare icon so it
+   isn't sitting over the film for all 29 seconds */
+function armSoundOffer(){
+  clearTimeout(sndRetireT);
+  if(sndAnswered) return;
+  sndRetired=false; soundBtnState();
+  sndRetireT=setTimeout(()=>{ sndRetired=true; soundBtnState(); },11000);
+}
 
-function armGestures(on){
-  const m=on?'addEventListener':'removeEventListener';
-  ['pointerdown','touchstart','mousedown','keydown','click'].forEach(ev=>
-    document[m](ev,onFirstGesture,{capture:true}));
-}
-function onFirstGesture(e){
-  // the sound button is authoritative for itself, so don't race it
-  if(e&&e.target&&e.target.closest&&e.target.closest('#sound')) return;
-  unlockAudio();
-}
 function unlockAudio(){
-  if(!SND._want||SND.on) return;
+  if(SND.on) return;
   SND.init();
   if(!SND.ctx) return;
   const go=()=>{
     if(SND.ctx.state!=='running') return;
     SND.enable();
-    // If the timeline has already run past the drone cue, join the bed at
-    // the point the picture has reached. Otherwise leave it to the cue.
+    // if the timeline is already past the drone cue, join the bed where
+    // the picture is; otherwise leave it to the cue at t=0.05
     const t=MASTER?MASTER.time():0;
     if(t>0.05&&t<28.5) SND.drone(t-0.05);
-    armGestures(false);
     soundBtnState();
   };
   if(SND.ctx.state==='running') go();
@@ -1916,8 +1989,10 @@ function unlockAudio(){
 }
 
 sndBtn.addEventListener('click',()=>{
-  if(SND.on){ SND._want=false; SND.disable(); soundBtnState(); }
-  else { SND._want=true; armGestures(false); unlockAudio(); soundBtnState(); }
+  sndAnswered=true;
+  if(SND.on){ SND._want=false; SND.disable(); }
+  else { SND._want=true; unlockAudio(); }
+  soundBtnState();
 });
 
 // if the tab is backgrounded the context can be suspended out from under us
@@ -1946,8 +2021,8 @@ window.SEQ={
              want:!!SND._want, drone:!!SND._droneOn,
              gain: SND.bus?+SND.bus.gain.value.toFixed(3):0 };
   },
-  enableSound(){ SND._want=true; unlockAudio(); soundBtnState(); },
-  muteSound(){ SND._want=false; SND.disable(); soundBtnState(); }
+  enableSound(){ sndAnswered=true; SND._want=true; unlockAudio(); soundBtnState(); },
+  muteSound(){ sndAnswered=true; SND._want=false; SND.disable(); soundBtnState(); }
 };
 
 /* wait for fonts AND a first rendered frame, so nothing can pop in
@@ -1961,17 +2036,11 @@ function boot(){
     requestAnimationFrame(()=>{
       R('boot').classList.add('gone');
       setTimeout(()=>{ R('boot').style.display='none'; },760);
-      // sound is on by default: try to start it with the picture. if the
-      // browser refuses without a gesture, the armed listeners catch the
-      // first one and the bed joins at the right point.
-      armGestures(true);
-      unlockAudio();
       soundBtnState();
       start();
-      // some engines only flip the context to 'running' a beat later; only
-      // surface the hint once we're sure the browser really did refuse
-      setTimeout(()=>{ unlockAudio(); soundBtnState(); },350);
-      setTimeout(()=>{ BOOTED=true; unlockAudio(); soundBtnState(); },1400);
+      // let the first beat land before offering the sound, so the opening
+      // frame belongs to the film rather than to a control
+      setTimeout(()=>{ sndBtn.classList.add('show'); },900);
     });
   });
 }
